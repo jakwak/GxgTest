@@ -1,0 +1,13 @@
+{
+  "name": "gxg-test",
+  "version": "0.1.0",
+  "private": true,
+  "description": "실시간 수학 퀴즈 시스템 (Colyseus + SvelteKit + Local Supabase)",
+  "packageManager": "pnpm@9.0.0",
+  "scripts": {
+    "dev:server": "pnpm -F server dev",
+    "dev:client": "pnpm -F client dev",
+    "supabase:start": "supabase start",
+    "supabase:reset": "supabase db reset"
+  }
+}

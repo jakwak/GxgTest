@@ -1,0 +1,9 @@
+node_modules
+dist
+.svelte-kit
+build
+.env
+.env.local
+.DS_Store
+supabase/.branches
+supabase/.temp
