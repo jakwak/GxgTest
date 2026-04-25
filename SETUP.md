@@ -30,7 +30,7 @@ supabase db reset   # 0001_init + 0002_rls + seed.sql 적용
 
 ```bash
 # 터미널 1 — Colyseus 서버
-pnpm -F server dev          # ws://localhost:2567
+pnpm -F server dev          # ws://localhost:2568
 
 # 터미널 2 — SvelteKit 클라이언트
 pnpm -F client dev          # http://localhost:5173

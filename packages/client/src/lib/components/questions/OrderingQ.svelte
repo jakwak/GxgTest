@@ -1,11 +1,12 @@
 <script lang="ts">
-  import { createEventDispatcher } from 'svelte';
+  import { onMount, onDestroy } from 'svelte';
 
-  export let question: any;
-  export let revealedAnswer: number[] | null = null;
-  export let locked = false;
-
-  const dispatch = createEventDispatcher();
+  let { question, revealedAnswer = null, locked = false, onsubmit }: {
+    question: any;
+    revealedAnswer?: number[] | null;
+    locked?: boolean;
+    onsubmit?: (data: (number | null)[]) => void;
+  } = $props();
 
   const fixed = question.payload.fixed ?? [];
   const fixedIdx = new Set<number>(fixed.map((item: any) => item.index));
@@ -17,8 +18,14 @@
     return slots;
   }
 
-  let slots: (number | null)[] = buildInitialSlots();
-  let activeSlot: number | null = null;
+  let slots: (number | null)[] = $state(buildInitialSlots());
+  let activeSlot: number | null = $state(null);
+
+  let dragging: { value: number } | null = $state(null);
+  let dragStartPos = { x: 0, y: 0 };
+  let pointerX = $state(0);
+  let pointerY = $state(0);
+  let hoveredSlot: number | null = $state(null);
 
   function selectSlot(index: number) {
     if (locked || fixedIdx.has(index)) return;
@@ -29,6 +36,14 @@
     if (locked || activeSlot == null) return;
     const next = [...slots];
     next[activeSlot] = value;
+    slots = next;
+    activeSlot = null;
+  }
+
+  function placeAt(index: number, value: number) {
+    if (locked || fixedIdx.has(index)) return;
+    const next = [...slots];
+    next[index] = value;
     slots = next;
     activeSlot = null;
   }
@@ -46,10 +61,60 @@
     activeSlot = null;
   }
 
-  $: pool = (question.payload.pool as number[]).filter((value: number) => !slots.includes(value));
-  $: distractors = (question.payload.distractors as number[]).filter((value: number) => pool.includes(value));
-  $: usable = pool.filter((value: number) => !distractors.includes(value));
-  $: isComplete = slots.every((value) => value != null);
+  function onDragStart(e: PointerEvent, value: number) {
+    if (locked) return;
+    e.preventDefault();
+    dragging = { value };
+    pointerX = e.clientX;
+    pointerY = e.clientY;
+    dragStartPos = { x: e.clientX, y: e.clientY };
+    hoveredSlot = null;
+  }
+
+  function onDragMove(e: PointerEvent) {
+    if (!dragging) return;
+    pointerX = e.clientX;
+    pointerY = e.clientY;
+
+    const el = document.elementFromPoint(e.clientX, e.clientY);
+    const target = el?.closest('[data-slot-index]') as HTMLElement | null;
+    const idx = target?.dataset.slotIndex ? Number(target.dataset.slotIndex) : null;
+    hoveredSlot = Number.isFinite(idx as any) ? (idx as number) : null;
+  }
+
+  function onDragEnd() {
+    if (!dragging) return;
+
+    const dx = pointerX - dragStartPos.x;
+    const dy = pointerY - dragStartPos.y;
+    const dist = Math.sqrt(dx * dx + dy * dy);
+
+    if (dist < 8) {
+      placeCard(dragging.value);
+    } else if (hoveredSlot != null) {
+      placeAt(hoveredSlot, dragging.value);
+    }
+
+    dragging = null;
+    hoveredSlot = null;
+  }
+
+  onMount(() => {
+    window.addEventListener('pointermove', onDragMove);
+    window.addEventListener('pointerup', onDragEnd);
+  });
+
+  onDestroy(() => {
+    window.removeEventListener('pointermove', onDragMove);
+    window.removeEventListener('pointerup', onDragEnd);
+  });
+
+  let pool = $derived(
+    (question.payload.pool as number[])
+      .filter((value: number) => !slots.includes(value))
+      .toSorted((a: number, b: number) => a - b)
+  );
+  let isComplete = $derived(slots.every((value) => value != null));
 </script>
 
 <section class="question-card">
@@ -64,8 +129,10 @@
           class:fixed={fixedIdx.has(index)}
           class:active={activeSlot === index}
           class:filled={value != null && !fixedIdx.has(index)}
+          class:drop-hover={dragging && hoveredSlot === index && !fixedIdx.has(index)}
+          data-slot-index={index}
           disabled={locked}
-          on:click={() => (value != null && !fixedIdx.has(index) ? clearSlot(index) : selectSlot(index))}
+          onclick={() => (value != null && !fixedIdx.has(index) ? clearSlot(index) : selectSlot(index))}
         >
           {value ?? '?'}
         </button>
@@ -73,25 +140,19 @@
     </div>
   </div>
 
-  <div class="tray-grid">
-    <div class="tray">
-      <div class="section-title">남은 카드 (드래그 대신 탭)</div>
-      <div class="cards">
-        {#each usable as value}
-          <button class="pick red" disabled={locked || activeSlot == null} on:click={() => placeCard(value)}>
-            {value}
-          </button>
-        {/each}
-      </div>
-    </div>
-
-    <div class="tray muted">
-      <div class="section-title">사용 불필요</div>
-      <div class="cards">
-        {#each distractors as value}
-          <div class="pick gray">{value}</div>
-        {/each}
-      </div>
+  <div class="tray">
+    <div class="section-title">남은 카드</div>
+    <div class="cards">
+      {#each pool as value}
+        <button
+          class="pick red"
+          disabled={locked || (activeSlot == null && !dragging)}
+          onpointerdown={(e) => onDragStart(e, value)}
+          onclick={() => placeCard(value)}
+        >
+          {value}
+        </button>
+      {/each}
     </div>
   </div>
 
@@ -108,12 +169,18 @@
   {/if}
 
   <div class="actions">
-    <button class="ghost" disabled={locked} on:click={reset}>초기화</button>
-    <button class="submit" disabled={!isComplete || locked} on:click={() => dispatch('submit', slots)}>
+    <button class="ghost" disabled={locked} onclick={reset}>초기화</button>
+    <button class="submit" disabled={!isComplete || locked} onclick={() => onsubmit?.(slots)}>
       제출하기
     </button>
   </div>
 </section>
+
+{#if dragging}
+  <div class="drag-ghost" style="left:{pointerX}px; top:{pointerY}px">
+    {dragging.value}
+  </div>
+{/if}
 
 <style>
   .question-card {
@@ -180,20 +247,16 @@
     color: #2f4560;
   }
 
-  .tray-grid {
-    display: grid;
-    grid-template-columns: 1.3fr 1fr;
-    gap: 1rem;
+  .slot.drop-hover {
+    border-style: solid;
+    border-color: #ff9c31;
+    box-shadow: 0 0 0 4px rgba(255, 156, 49, 0.2);
   }
 
   .tray {
     border-radius: 18px;
     background: #f7fafc;
     padding: 1rem;
-  }
-
-  .tray.muted {
-    background: #f1f5f8;
   }
 
   .pick {
@@ -204,13 +267,25 @@
 
   .pick.red {
     cursor: pointer;
+    touch-action: none;
   }
 
-  .pick.gray {
-    border-color: #94a6b0;
-    background: #eef2f4;
-    color: #8ba0ab;
+  .drag-ghost {
+    position: fixed;
+    transform: translate(-50%, -50%);
+    padding: 0.5rem 1rem;
+    background: #fff;
+    border: 3px solid #ff9c31;
+    border-radius: 12px;
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: #2e4560;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
+    pointer-events: none;
+    z-index: 1000;
+    white-space: nowrap;
   }
+
 
   .tip {
     margin: 0;
@@ -277,10 +352,6 @@
   }
 
   @media (max-width: 760px) {
-    .tray-grid {
-      grid-template-columns: 1fr;
-    }
-
     .slot,
     .pick {
       width: calc(25% - 0.45rem);

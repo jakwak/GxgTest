@@ -26,6 +26,7 @@ export interface MatchingQ extends BaseQuestion {
     left: { id: string; label: string }[];
     right: { id: string; label: string }[];
     correct: Record<string, string>; // leftId -> rightId
+    allowReuse?: boolean;
   };
 }
 
@@ -47,6 +48,7 @@ export interface ClassifyQ extends BaseQuestion {
     cards: (string | number)[];
     bins: { id: string; label: string }[]; // 약수 / 배수 / 둘 다 아님
     correct: Record<string, string | string[]>; // card -> binId or accepted binIds
+    allowReuse?: boolean;
   };
 }
 

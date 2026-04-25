@@ -2,8 +2,8 @@ import { Client, type Room } from 'colyseus.js';
 import { get, writable } from 'svelte/store';
 import { env } from '$env/dynamic/public';
 
-const WS = env.PUBLIC_COLYSEUS_WS ?? 'ws://localhost:2567';
-const AUX = env.PUBLIC_AUX_HTTP ?? 'http://localhost:2568';
+const WS = env.PUBLIC_COLYSEUS_WS ?? 'ws://localhost:2568';
+const AUX = env.PUBLIC_AUX_HTTP ?? 'http://localhost:2569';
 
 export const client = new Client(WS);
 

@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onDestroy, onMount } from 'svelte';
+  import { onMount, onDestroy } from 'svelte';
   import { page } from '$app/stores';
   import {
     currentQuestion,
@@ -8,10 +8,10 @@
     leaveRoom,
     revealedAnswer,
     room,
-    state
+    state as gameState
   } from '$lib/colyseus';
 
-  let error = '';
+  let error = $state('');
 
   async function join() {
     error = '';
@@ -33,8 +33,8 @@
     $room?.send('next');
   }
 
-  $: players = [...($state?.players ?? [])].sort((a, b) => b.score - a.score);
-  $: questionNumber = ($state?.currentIndex ?? 0) + 1;
+  let players = $derived([...($gameState?.players ?? [])].sort((a: any, b: any) => b.score - a.score));
+  let questionNumber = $derived(($gameState?.currentIndex ?? 0) + 1);
 </script>
 
 <svelte:head>
@@ -62,9 +62,9 @@
     <div class="layout">
       <section class="panel stage">
         <div class="topline">
-          <div class="badge">상태: {$state?.status ?? 'waiting'}</div>
-          <div class="badge">문제 {questionNumber} / {$state?.totalQuestions ?? 0}</div>
-          <div class="badge">남은 시간 {$state?.timeLeft ?? 0}초</div>
+          <div class="badge">상태: {$gameState?.status ?? 'waiting'}</div>
+          <div class="badge">문제 {questionNumber} / {$gameState?.totalQuestions ?? 0}</div>
+          <div class="badge">남은 시간 {$gameState?.timeLeft ?? 0}초</div>
         </div>
 
         {#if $ended}
@@ -72,27 +72,27 @@
             <h2>모든 문제가 종료되었습니다.</h2>
             <p>학생 점수표를 확인한 뒤 새 세션을 발급할 수 있어요.</p>
           </div>
-        {:else if $state?.status === 'waiting'}
+        {:else if $gameState?.status === 'waiting'}
           <div class="status-card">
             <h2>대기 중</h2>
             <p>학생 입장을 확인한 뒤 시작 버튼을 눌러 주세요.</p>
-            <button class="primary" on:click={startQuiz}>퀴즈 시작</button>
+            <button class="primary" onclick={startQuiz}>퀴즈 시작</button>
           </div>
         {:else}
           <div class="status-card">
             <h2>{$currentQuestion?.title ?? '문제 준비 중'}</h2>
             <p>{$currentQuestion?.prompt}</p>
 
-            {#if $state?.status === 'playing'}
-              <button class="primary" on:click={nextQuestion} disabled>
+            {#if $gameState?.status === 'playing'}
+              <button class="primary" onclick={nextQuestion} disabled>
                 공개 전에는 다음 문제로 넘어갈 수 없어요
               </button>
-            {:else if $state?.status === 'reveal'}
+            {:else if $gameState?.status === 'reveal'}
               <div class="answer-box">
                 <strong>정답 공개됨</strong>
                 <pre>{JSON.stringify($revealedAnswer, null, 2)}</pre>
               </div>
-              <button class="primary" on:click={nextQuestion}>다음 문제</button>
+              <button class="primary" onclick={nextQuestion}>다음 문제</button>
             {/if}
           </div>
         {/if}

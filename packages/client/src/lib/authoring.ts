@@ -14,6 +14,7 @@ export interface AuthorDraft {
   matchingLeft: string;
   matchingRight: string;
   matchingCorrect: string;
+  matchingAllowReuse: boolean;
   mcSituation: string;
   mcQuestion: string;
   mcOptions: string;
@@ -21,6 +22,7 @@ export interface AuthorDraft {
   classifyCards: string;
   classifyBins: string;
   classifyCorrect: string;
+  classifyAllowReuse: boolean;
   orderingSlotCount: number;
   orderingPool: string;
   orderingDistractors: string;
@@ -48,13 +50,15 @@ export function templateDraft(type: QuestionType): AuthorDraft {
     matchingLeft: '(12, 18)\n(15, 25)\n(8, 20)\n(9, 16)',
     matchingRight: '5\n1\n6\n4',
     matchingCorrect: '1=3\n2=1\n3=4\n4=2',
+    matchingAllowReuse: false,
     mcSituation: '빨간 버스는 6분마다, 파란 버스는 8분마다 출발해요.\n두 버스가 오전 9시에 동시에 출발했어요.',
     mcQuestion: '다음에 두 버스가 동시에 출발하는 시각은?',
     mcOptions: '9시 12분\n9시 24분\n9시 32분\n9시 48분',
     mcCorrectIndex: 2,
     classifyCards: '1,2,3,5,6,7,12,18,24,25',
-    classifyBins: '6의 약수,6의 배수,둘 다 아님',
-    classifyCorrect: '1=1\n2=1\n3=1\n5=3\n6=1|2\n7=3\n12=2\n18=2\n24=2\n25=3',
+    classifyBins: '약수=6의 약수,배수=6의 배수,없음=둘 다 아님',
+    classifyCorrect: '1=약수\n2=약수\n3=약수\n5=없음\n6=약수|배수\n7=없음\n12=배수\n18=배수\n24=배수\n25=없음',
+    classifyAllowReuse: false,
     orderingSlotCount: 8,
     orderingPool: '4,8,12,5,7,9',
     orderingDistractors: '5,7,9',
@@ -121,6 +125,19 @@ function csvStrings(text: string) {
     .filter(Boolean);
 }
 
+function parseClassifyBins(text: string) {
+  return csvStrings(text).map((entry, index) => {
+    const [rawId, ...rest] = entry.split('=');
+    if (rest.length === 0) {
+      return { id: String(index + 1), label: rawId.trim() };
+    }
+
+    const id = rawId.trim();
+    const label = rest.join('=').trim();
+    return { id: id || String(index + 1), label: label || id || String(index + 1) };
+  });
+}
+
 export function buildQuestion(draft: AuthorDraft): AuthorQuestion {
   const base = {
     type: draft.type,
@@ -147,7 +164,7 @@ export function buildQuestion(draft: AuthorDraft): AuthorQuestion {
           return [leftIndex, rightIndex];
         })
       );
-      return { ...base, type: 'matching', payload: { left, right, correct } };
+      return { ...base, type: 'matching', payload: { left, right, correct, allowReuse: draft.matchingAllowReuse } };
     }
 
     case 'multiple_choice': {
@@ -168,10 +185,7 @@ export function buildQuestion(draft: AuthorDraft): AuthorQuestion {
     }
 
     case 'classify': {
-      const bins = csvStrings(draft.classifyBins).map((label, index) => ({
-        id: String(index + 1),
-        label
-      }));
+      const bins = parseClassifyBins(draft.classifyBins);
       const correct = Object.fromEntries(
         lines(draft.classifyCorrect).map((line) => {
           const [card, answer] = line.split('=').map((value) => value.trim());
@@ -185,21 +199,37 @@ export function buildQuestion(draft: AuthorDraft): AuthorQuestion {
         payload: {
           cards: csvNumbers(draft.classifyCards),
           bins,
-          correct
+          correct,
+          allowReuse: draft.classifyAllowReuse
         }
       };
     }
 
     case 'ordering': {
-      const fixed = lines(draft.orderingFixed).map((line) => {
-        const [index, value] = line.split('=').map((part) => Number(part.trim()));
-        return { index: index - 1, value };
-      });
+      const slotCount = Number(draft.orderingSlotCount);
+      const fixedEntries = lines(draft.orderingFixed)
+        .map((line) => {
+          const [indexRaw, valueRaw] = line.split('=');
+          const index = Number(indexRaw?.trim());
+          const value = Number(valueRaw?.trim());
+          return { index, value };
+        })
+        .filter((item) => Number.isFinite(item.index) && Number.isFinite(item.value))
+        .filter((item) => item.index >= 1 && item.index <= slotCount);
+
+      const fixedMap = new Map<number, number>();
+      for (const item of fixedEntries) fixedMap.set(item.index - 1, item.value);
+
+      const fixed = Array.from(fixedMap.entries())
+        .map(([index, value]) => ({ index, value }))
+        .sort((a, b) => a.index - b.index)
+        .slice(0, slotCount);
+
       return {
         ...base,
         type: 'ordering',
         payload: {
-          slotCount: Number(draft.orderingSlotCount),
+          slotCount,
           pool: csvNumbers(draft.orderingPool),
           distractors: csvNumbers(draft.orderingDistractors),
           fixed,
@@ -231,6 +261,80 @@ export function buildQuestion(draft: AuthorDraft): AuthorQuestion {
           max: Number(draft.sliderMax),
           correct: Number(draft.sliderCorrect)
         }
+      };
+  }
+}
+
+export function draftFromQuestion(question: Question): AuthorDraft {
+  const base = {
+    ...templateDraft(question.type),
+    type: question.type,
+    title: question.title,
+    prompt: question.prompt,
+    tip: question.tip ?? '',
+    score: question.score,
+    timeLimit: question.timeLimit
+  };
+
+  switch (question.type) {
+    case 'matching':
+      return {
+        ...base,
+        matchingLeft: question.payload.left.map((item) => item.label).join('\n'),
+        matchingRight: question.payload.right.map((item) => item.label).join('\n'),
+        matchingCorrect: Object.entries(question.payload.correct)
+          .map(([leftId, rightId]) => `${leftId}=${rightId}`)
+          .join('\n'),
+        matchingAllowReuse: Boolean(question.payload.allowReuse)
+      };
+
+    case 'multiple_choice':
+      return {
+        ...base,
+        mcSituation: question.payload.situation,
+        mcQuestion: question.payload.question,
+        mcOptions: question.payload.options.map((item) => item.label).join('\n'),
+        mcCorrectIndex: Number(question.payload.correctId)
+      };
+
+    case 'classify':
+      return {
+        ...base,
+        classifyCards: question.payload.cards.join(','),
+        classifyBins: question.payload.bins.map((item) => `${item.id}=${item.label}`).join(','),
+        classifyCorrect: Object.entries(question.payload.correct)
+          .map(([card, answer]) => `${card}=${Array.isArray(answer) ? answer.join('|') : answer}`)
+          .join('\n'),
+        classifyAllowReuse: Boolean(question.payload.allowReuse)
+      };
+
+    case 'ordering':
+      return {
+        ...base,
+        orderingSlotCount: question.payload.slotCount,
+        orderingPool: question.payload.pool.join(','),
+        orderingDistractors: question.payload.distractors.join(','),
+        orderingFixed: question.payload.fixed.map((item) => `${item.index + 1}=${item.value}`).join('\n'),
+        orderingCorrectOrder: question.payload.correctOrder.join(',')
+      };
+
+    case 'hotspot':
+      return {
+        ...base,
+        hotspotRangeFrom: question.payload.rangeFrom,
+        hotspotRangeTo: question.payload.rangeTo,
+        hotspotCorrect: question.payload.correct.join(','),
+        hotspotDecoys: (question.payload.decoys ?? []).join(',')
+      };
+
+    case 'slider':
+      return {
+        ...base,
+        sliderA: question.payload.a,
+        sliderB: question.payload.b,
+        sliderMin: question.payload.min,
+        sliderMax: question.payload.max,
+        sliderCorrect: question.payload.correct
       };
   }
 }

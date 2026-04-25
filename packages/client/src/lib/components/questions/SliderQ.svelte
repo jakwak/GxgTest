@@ -1,21 +1,21 @@
 <script lang="ts">
-  import { createEventDispatcher } from 'svelte';
-
-  export let question: any;
-  export let revealedAnswer: number | null = null;
-  export let locked = false;
-
-  const dispatch = createEventDispatcher();
+  let { question, revealedAnswer = null, locked = false, onsubmit }: {
+    question: any;
+    revealedAnswer?: number | null;
+    locked?: boolean;
+    onsubmit?: (data: number) => void;
+  } = $props();
 
   const { a, b, min, max } = question.payload;
-  let value = Math.round((min + max) / 2);
+  let value = $state(Math.round((min + max) / 2));
 
-  $: dividesA = a % value === 0;
-  $: dividesB = b % value === 0;
-  $: checkText =
+  let dividesA = $derived(a % value === 0);
+  let dividesB = $derived(b % value === 0);
+  let checkText = $derived(
     value > 0
       ? `${a} ÷ ${value} = ${a / value}, ${b} ÷ ${value} = ${b / value}`
-      : '';
+      : ''
+  );
 </script>
 
 <section class="question-card">
@@ -56,7 +56,7 @@
   </div>
 
   <div class="actions">
-    <button class="submit" disabled={locked} on:click={() => dispatch('submit', value)}>제출하기</button>
+    <button class="submit" disabled={locked} onclick={() => onsubmit?.(value)}>제출하기</button>
   </div>
 </section>
 

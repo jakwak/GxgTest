@@ -1,12 +1,12 @@
 <script lang="ts">
-  import { createEventDispatcher } from 'svelte';
+  let { question, revealedAnswer = null, locked = false, onsubmit }: {
+    question: any;
+    revealedAnswer?: string | null;
+    locked?: boolean;
+    onsubmit?: (data: string) => void;
+  } = $props();
 
-  export let question: any;
-  export let revealedAnswer: string | null = null;
-  export let locked = false;
-
-  const dispatch = createEventDispatcher();
-  let picked: string | null = null;
+  let picked: string | null = $state(null);
 </script>
 
 <section class="question-card">
@@ -25,7 +25,7 @@
         class:correct={revealedAnswer === option.id}
         class:dimmed={revealedAnswer && revealedAnswer !== option.id}
         disabled={locked}
-        on:click={() => (picked = option.id)}
+        onclick={() => (picked = option.id)}
       >
         <span class="badge">{index + 1}</span>
         <span>{option.label}</span>
@@ -47,7 +47,7 @@
   {/if}
 
   <div class="actions">
-    <button class="submit" disabled={!picked || locked} on:click={() => dispatch('submit', picked)}>
+    <button class="submit" disabled={!picked || locked} onclick={() => onsubmit?.(picked!)}>
       {revealedAnswer ? '다음 공개를 기다리는 중' : '제출하기'}
     </button>
   </div>

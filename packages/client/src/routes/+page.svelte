@@ -1,5 +1,5 @@
 <script lang="ts">
-  let code = 'DEMO01';
+  let code = $state('DEMO01');
 </script>
 
 <svelte:head>

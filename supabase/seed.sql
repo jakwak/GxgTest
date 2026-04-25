@@ -59,14 +59,14 @@ insert into gxgtest_questions (id, type, title, prompt, tip, score, time_limit, 
  jsonb_build_object(
    'cards', jsonb_build_array(1,2,3,5,6,7,12,18,24,25),
    'bins',  jsonb_build_array(
-     jsonb_build_object('id','div',  'label','6의 약수'),
-     jsonb_build_object('id','mult', 'label','6의 배수'),
-     jsonb_build_object('id','none', 'label','둘 다 아님')
+     jsonb_build_object('id','약수', 'label','6의 약수'),
+     jsonb_build_object('id','배수', 'label','6의 배수'),
+     jsonb_build_object('id','없음', 'label','둘 다 아님')
    ),
    'correct', jsonb_build_object(
-     '1','div','2','div','3','div',
-     '5','none','6', jsonb_build_array('div','mult'),'7','none',
-     '12','mult','18','mult','24','mult','25','none'
+     '1','약수','2','약수','3','약수',
+     '5','없음','6', jsonb_build_array('약수','배수'),'7','없음',
+     '12','배수','18','배수','24','배수','25','없음'
    )
  )
 ),

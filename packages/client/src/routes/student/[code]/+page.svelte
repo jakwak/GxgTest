@@ -6,7 +6,7 @@
     joinAsStudent,
     revealedAnswer,
     room,
-    state
+    state as gameState
   } from '$lib/colyseus';
   import MatchingQ from '$lib/components/questions/MatchingQ.svelte';
   import MultipleChoiceQ from '$lib/components/questions/MultipleChoiceQ.svelte';
@@ -15,8 +15,8 @@
   import HotspotQ from '$lib/components/questions/HotspotQ.svelte';
   import SliderQ from '$lib/components/questions/SliderQ.svelte';
 
-  let name = '';
-  let error = '';
+  let name = $state('');
+  let error = $state('');
 
   const components: Record<string, any> = {
     matching: MatchingQ,
@@ -36,15 +36,16 @@
     }
   }
 
-  function submit(event: CustomEvent) {
-    $room?.send('answer', { response: event.detail });
+  function submit(response: any) {
+    $room?.send('answer', { response });
   }
 
-  $: me = $state?.players?.find((player: any) => player.id === $room?.sessionId);
-  $: questionNumber = ($state?.currentIndex ?? 0) + 1;
-  $: totalQuestions = $state?.totalQuestions ?? '?';
-  $: locked = Boolean(me?.hasSubmitted || $state?.status === 'reveal');
-  $: answerShown = $revealedAnswer != null;
+  let me = $derived($gameState?.players?.find((player: any) => player.id === $room?.sessionId));
+  let questionNumber = $derived(($gameState?.currentIndex ?? 0) + 1);
+  let totalQuestions = $derived($gameState?.totalQuestions ?? '?');
+  let locked = $derived(Boolean(me?.hasSubmitted || $gameState?.status === 'reveal'));
+  let answerShown = $derived($revealedAnswer != null);
+  let Comp = $derived($currentQuestion ? components[$currentQuestion.type] : null);
 </script>
 
 <main class="page">
@@ -54,7 +55,7 @@
       <p>입장 코드 <strong>{$page.params.code}</strong> 방으로 들어갑니다.</p>
       <div class="join-row">
         <input bind:value={name} placeholder="닉네임" maxlength="12" />
-        <button on:click={join}>입장하기</button>
+        <button onclick={join}>입장하기</button>
       </div>
       {#if error}
         <p class="error">{error}</p>
@@ -64,7 +65,7 @@
     <section class="end-card">
       <h1>수업이 종료되었어요</h1>
       <p>최종 점수는 <strong>{me?.score ?? 0}점</strong>입니다.</p>
-      <p>맞춘 문제 수: {me?.answeredCount ?? 0} / {$state?.totalQuestions ?? 0}</p>
+      <p>맞춘 문제 수: {me?.answeredCount ?? 0} / {$gameState?.totalQuestions ?? 0}</p>
       <a href="/" class="home-link">처음으로 돌아가기</a>
     </section>
   {:else}
@@ -73,25 +74,26 @@
         <span>문제 {questionNumber}/{totalQuestions}</span>
         <span class="title">[{($currentQuestion?.title ?? '대기 중')}]</span>
         <div class="meta">
-          <span>[{String(Math.floor(($state?.timeLeft ?? 0) / 60)).padStart(2, '0')}:{String(($state?.timeLeft ?? 0) % 60).padStart(2, '0')}]</span>
+          <span>[{String(Math.floor(($gameState?.timeLeft ?? 0) / 60)).padStart(2, '0')}:{String(($gameState?.timeLeft ?? 0) % 60).padStart(2, '0')}]</span>
           <span>{me?.score ?? 0}점</span>
         </div>
       </header>
 
-      {#if $state?.status === 'waiting'}
+      {#if $gameState?.status === 'waiting'}
         <div class="waiting-card">
           <h2>교사가 시작하기를 기다리고 있어요</h2>
           <p>잠시만 기다리면 첫 문제가 열립니다.</p>
         </div>
       {:else if $currentQuestion}
         <section class="content-card">
-          <svelte:component
-            this={components[$currentQuestion.type]}
-            question={$currentQuestion}
-            revealedAnswer={$revealedAnswer}
-            {locked}
-            on:submit={submit}
-          />
+          {#if Comp}
+            <Comp
+              question={$currentQuestion}
+              revealedAnswer={$revealedAnswer}
+              {locked}
+              onsubmit={submit}
+            />
+          {/if}
 
           {#if me?.hasSubmitted && !answerShown}
             <div class="feedback submitted">제출 완료! 다른 친구들이 마칠 때까지 잠시 기다려요.</div>

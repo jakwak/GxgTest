@@ -1,24 +1,26 @@
 <script lang="ts">
-  import { createEventDispatcher, onMount, onDestroy, afterUpdate } from 'svelte';
+  import { onMount, onDestroy } from 'svelte';
 
-  export let question: any;
-  export let revealedAnswer: Record<string, string> | null = null;
-  export let locked = false;
+  let { question, revealedAnswer = null, locked = false, onsubmit }: {
+    question: any;
+    revealedAnswer?: Record<string, string> | null;
+    locked?: boolean;
+    onsubmit?: (data: Record<string, string>) => void;
+  } = $props();
 
-  const dispatch = createEventDispatcher();
+  let pairs: Record<string, string> = $state({});
+  let selectedLeft: string | null = $state(null);
 
-  let pairs: Record<string, string> = {};
-  let selectedLeft: string | null = null;
-
-  let dragging: { id: string; label: string } | null = null;
+  let dragging: { id: string; label: string } | null = $state(null);
   let dragStartPos = { x: 0, y: 0 };
-  let pointerX = 0;
-  let pointerY = 0;
-  let hoveredRight: string | null = null;
+  let pointerX = $state(0);
+  let pointerY = $state(0);
+  let hoveredRight: string | null = $state(null);
   let boardEl: HTMLElement;
 
   const leftItems = question.payload.left ?? [];
   const rightItems = question.payload.right ?? [];
+  const allowReuse = question.payload.allowReuse ?? false;
 
   let leftDotRefs: Record<string, HTMLElement> = {};
   let rightDotRefs: Record<string, HTMLElement> = {};
@@ -40,8 +42,9 @@
   }
 
   type Line = { x1: number; y1: number; x2: number; y2: number; color: string };
-  let connLines: Line[] = [];
-  let activeDragLine: Line | null = null;
+  let connLines: Line[] = $state([]);
+  let correctLines: Line[] = $state([]);
+  let activeDragLine: Line | null = $state(null);
 
   function recomputeLines() {
     if (!boardEl) { connLines = []; return; }
@@ -64,6 +67,28 @@
     connLines = result;
   }
 
+  function recomputeCorrectLines() {
+    if (!boardEl || !revealedAnswer) { correctLines = []; return; }
+    const br = boardEl.getBoundingClientRect();
+    const result: Line[] = [];
+    for (const [lid, rid] of Object.entries(revealedAnswer)) {
+      if (pairs[lid] === rid) continue;
+      const ld = leftDotRefs[lid];
+      const rd = rightDotRefs[rid];
+      if (!ld || !rd) continue;
+      const lr = ld.getBoundingClientRect();
+      const rr = rd.getBoundingClientRect();
+      result.push({
+        x1: lr.left + lr.width / 2 - br.left,
+        y1: lr.top + lr.height / 2 - br.top,
+        x2: rr.left + rr.width / 2 - br.left,
+        y2: rr.top + rr.height / 2 - br.top,
+        color: colorOf(lid),
+      });
+    }
+    correctLines = result;
+  }
+
   function recomputeDragLine() {
     if (!dragging || !boardEl) { activeDragLine = null; return; }
     const br = boardEl.getBoundingClientRect();
@@ -79,7 +104,12 @@
     };
   }
 
-  afterUpdate(recomputeLines);
+  $effect(() => {
+    pairs;
+    selectedLeft;
+    recomputeLines();
+    recomputeCorrectLines();
+  });
 
   function onDragStart(e: PointerEvent, item: any) {
     if (locked) return;
@@ -130,8 +160,10 @@
 
   function applyPair(leftId: string, rightId: string) {
     const next = { ...pairs };
-    for (const [k, v] of Object.entries(next)) {
-      if (v === rightId) delete next[k];
+    if (!allowReuse) {
+      for (const [k, v] of Object.entries(next)) {
+        if (v === rightId) delete next[k];
+      }
     }
     next[leftId] = rightId;
     pairs = next;
@@ -155,7 +187,10 @@
   onMount(() => {
     window.addEventListener('pointermove', onDragMove);
     window.addEventListener('pointerup', onDragEnd);
-    resizeObserver = new ResizeObserver(recomputeLines);
+    resizeObserver = new ResizeObserver(() => {
+      recomputeLines();
+      recomputeCorrectLines();
+    });
     if (boardEl) resizeObserver.observe(boardEl);
   });
 
@@ -165,15 +200,15 @@
     resizeObserver?.disconnect();
   });
 
-  $: pairCount = Object.keys(pairs).length;
-  $: isComplete = pairCount === leftItems.length;
-  $: summaries = leftItems
+  let pairCount = $derived(Object.keys(pairs).length);
+  let isComplete = $derived(pairCount === leftItems.length);
+  let summaries = $derived(leftItems
     .filter((it: any) => pairs[it.id])
     .map((it: any) => ({
       leftId: it.id,
       left: it.label,
       right: rightItems.find((c: any) => c.id === pairs[it.id])?.label ?? '',
-    }));
+    })));
 
   function revealedLabel(leftId: string) {
     return rightItems.find((c: any) => c.id === revealedAnswer?.[leftId])?.label ?? '';
@@ -185,6 +220,13 @@
 
   <div class="board" bind:this={boardEl}>
     <svg class="lines-svg" aria-hidden="true">
+      {#each correctLines as line}
+        <line
+          x1={line.x1} y1={line.y1} x2={line.x2} y2={line.y2}
+          stroke={line.color} stroke-width="3" stroke-linecap="round"
+          stroke-dasharray="10 6" opacity="0.55"
+        />
+      {/each}
       {#each connLines as line}
         <line
           x1={line.x1} y1={line.y1} x2={line.x2} y2={line.y2}
@@ -211,7 +253,7 @@
             class:filled={!!pairs[item.id]}
             style={pairs[item.id] ? `--pair-color: ${colorOf(item.id)}` : ''}
             disabled={locked}
-            on:pointerdown={(e) => onDragStart(e, item)}
+            onpointerdown={(e) => onDragStart(e, item)}
           >
             <span>{item.label}</span>
           </button>
@@ -221,35 +263,50 @@
             class:dot-filled={!!pairs[item.id]}
             style={pairs[item.id] ? `--dot-color: ${colorOf(item.id)}` : ''}
             use:leftDotRef={item.id}
-          />
+          ></span>
         </div>
       {/each}
     </div>
 
-    <div class="col-middle" />
+    <div class="col-middle"></div>
 
     <div class="col-right">
       {#each rightItems as item}
         <div class="row-right" data-right-id={item.id}>
           <span
             class="dot right-dot"
-            class:dot-used={Object.values(pairs).includes(item.id)}
+            class:dot-used={!allowReuse && Object.values(pairs).includes(item.id)}
             class:dot-hover={hoveredRight === item.id}
             use:rightDotRef={item.id}
-          />
+          ></span>
           <button
             class="item right"
             class:drop-hover={hoveredRight === item.id}
-            class:used={Object.values(pairs).includes(item.id)}
+            class:used={!allowReuse && Object.values(pairs).includes(item.id)}
             data-right-id={item.id}
             disabled={locked}
-            on:click={() => onRightTap(item.id)}
+            onclick={() => onRightTap(item.id)}
           >
             <span>{item.label}</span>
           </button>
         </div>
       {/each}
     </div>
+  </div>
+
+  <div class="summary-panel">
+    <div class="section-title">현재 연결</div>
+    {#if summaries.length === 0}
+      <p class="empty">왼쪽 항목을 드래그해서 오른쪽 답에 놓으세요.</p>
+    {:else}
+      <div class="summary-list">
+        {#each summaries as s}
+          <button class="summary-pill" disabled={locked} onclick={() => removePair(s.leftId)}>
+            {s.left} → {s.right} ✕
+          </button>
+        {/each}
+      </div>
+    {/if}
   </div>
 
   {#if question.tip}
@@ -268,7 +325,8 @@
   {/if}
 
   <div class="actions">
-    <button class="submit" disabled={!isComplete || locked} on:click={() => dispatch('submit', pairs)}>
+    <button class="ghost" disabled={locked} onclick={reset}>초기화</button>
+    <button class="submit" disabled={!isComplete || locked} onclick={() => onsubmit?.(pairs)}>
       제출하기
     </button>
   </div>
@@ -470,17 +528,71 @@
     gap: 0.75rem;
   }
 
+  .summary-panel {
+    border: 2px solid #f7c07f;
+    border-radius: 18px;
+    background: #fff8ef;
+    padding: 1rem 1.15rem;
+  }
+
+  .summary-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.7rem;
+  }
+
+  .summary-pill {
+    padding: 0.7rem 1rem;
+    border-radius: 999px;
+    background: white;
+    border: 2px solid #ffbf82;
+    font-weight: 700;
+    color: #5f4b34;
+    cursor: pointer;
+    transition: background 120ms ease;
+  }
+
+  .summary-pill:hover:enabled {
+    background: #fff0e0;
+  }
+
+  .summary-pill:disabled {
+    cursor: not-allowed;
+  }
+
+  .section-title {
+    font-size: 0.95rem;
+    font-weight: 700;
+    color: #5e7ea3;
+    margin-bottom: 0.4rem;
+  }
+
+  .empty {
+    margin: 0;
+    color: #71849a;
+  }
+
+  .ghost,
   .submit {
-    min-width: 14rem;
+    min-width: 10rem;
     height: 3.6rem;
     border: 0;
     border-radius: 18px;
     font-size: 1.1rem;
     font-weight: 700;
+  }
+
+  .ghost {
+    background: #ffd29e;
+    color: #7b4a14;
+  }
+
+  .submit {
     background: #67c971;
     color: white;
   }
 
+  .ghost:disabled,
   .submit:disabled,
   .item:disabled {
     cursor: not-allowed;

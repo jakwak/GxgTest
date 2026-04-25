@@ -1,17 +1,16 @@
 <script lang="ts">
-  import { createEventDispatcher } from 'svelte';
-
-  export let question: any;
-  export let revealedAnswer: number[] | null = null;
-  export let locked = false;
-
-  const dispatch = createEventDispatcher();
+  let { question, revealedAnswer = null, locked = false, onsubmit }: {
+    question: any;
+    revealedAnswer?: number[] | null;
+    locked?: boolean;
+    onsubmit?: (data: number[]) => void;
+  } = $props();
 
   const { rangeFrom, rangeTo } = question.payload;
   const cells = Array.from({ length: rangeTo - rangeFrom + 1 }, (_, index) => index + rangeFrom);
   const targetCount = (question.payload.correct as number[] | undefined)?.length ?? 0;
 
-  let picked = new Set<number>();
+  let picked = $state(new Set<number>());
 
   function toggle(value: number) {
     if (locked) return;
@@ -25,7 +24,7 @@
     picked = new Set<number>();
   }
 
-  $: revealedSet = new Set<number>(revealedAnswer ?? []);
+  let revealedSet = $derived(new Set<number>(revealedAnswer ?? []));
 </script>
 
 <section class="question-card">
@@ -39,7 +38,7 @@
         class:correct={revealedAnswer && revealedSet.has(value)}
         class:wrong={revealedAnswer && picked.has(value) && !revealedSet.has(value)}
         disabled={locked}
-        on:click={() => toggle(value)}
+        onclick={() => toggle(value)}
       >
         {value}
       </button>
@@ -48,7 +47,7 @@
 
   <div class="footer-row">
     <div class="progress">찾은 개수: {picked.size} / {targetCount}</div>
-    <button class="reset" disabled={locked} on:click={reset}>다시 선택</button>
+    <button class="reset" disabled={locked} onclick={reset}>다시 선택</button>
   </div>
 
   <div class="bar">
@@ -56,7 +55,7 @@
   </div>
 
   <div class="actions">
-    <button class="submit" disabled={picked.size === 0 || locked} on:click={() => dispatch('submit', [...picked])}>
+    <button class="submit" disabled={picked.size === 0 || locked} onclick={() => onsubmit?.([...picked])}>
       제출하기
     </button>
   </div>
