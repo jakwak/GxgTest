@@ -1269,11 +1269,12 @@
     display: grid;
     gap: 0.25rem;
     padding-top: 1.35rem;
-    padding-right: 3.1rem;
+    padding-right: 0.95rem;
     padding-bottom: 2.05rem;
     border: 0;
     background: transparent;
     width: 100%;
+    box-sizing: border-box;
     min-width: 0;
   }
 
